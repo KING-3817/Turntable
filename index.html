@@ -389,7 +389,7 @@ const glassMat = new THREE.MeshPhongMaterial({
                         .fromTo(lpGroup.position, {x: -0.45, y: baseH + 1.2, z: 1.5}, {x: -0.45, y: baseH + 0.05, z: 0, duration: 0.8, ease: "power2.inOut"});
 
 // 기존 이미지 로드 코드 바로 아래에 추가하세요
-const audioPath = url.replace('.jpg', '.m4a'); // 1.jpg -> 1.mp3로 이름 변경
+const audioPath = url.replace('.jpg', '.mp3'); // 1.jpg -> 1.mp3로 이름 변경
 audioLoader.load(audioPath, (buffer) => {
     sound.setBuffer(buffer);
     sound.setLoop(true); // 반복 재생
