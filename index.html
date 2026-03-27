@@ -560,6 +560,33 @@ if (animState === 4 && isPowerOn && isLPOn) {
     renderer.render(scene, camera);
 }
 
+
+        audioLoader.load(audioPath, (buffer) => {
+    sound.setBuffer(buffer);
+    sound.setLoop(true);
+    sound.setVolume(0.5);
+
+    // 🔥 핵심: 미디어 세션 등록
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: "노래 제목",
+            artist: "가수 이름",
+            album: "앨범 이름",
+            artwork: [
+                { src: url, sizes: "512x512", type: "image/jpeg" }
+            ]
+        });
+
+        // 재생 / 일시정지 버튼 연결
+        navigator.mediaSession.setActionHandler('play', () => {
+            if (!sound.isPlaying) sound.play();
+        });
+
+        navigator.mediaSession.setActionHandler('pause', () => {
+            if (sound.isPlaying) sound.pause();
+        });
+    }
+});
 // 잊지 말고 함수를 실행시켜 줍니다.
 animate();
 
