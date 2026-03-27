@@ -431,6 +431,23 @@ audioLoader.load(audioPath, (buffer) => {
             }
         });
 
+        // 노래 정보를 알림창에 표시하기
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: '노래 제목',
+    artist: '가수 이름',
+    album: '앨범 이름',
+    artwork: [
+      { src: 'image.jpg', sizes: '512x512', type: 'image/jpeg' }
+    ]
+  });
+
+  // 알림창의 버튼(재생, 일시정지 등) 작동 시키기
+  navigator.mediaSession.setActionHandler('play', () => { audio.play(); });
+  navigator.mediaSession.setActionHandler('pause', () => { audio.pause(); });
+}
+
+
 // ==========================================
 // 13. 더블 클릭 전체화면 및 카메라 잠금 기능
 // ==========================================
