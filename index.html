@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -107,6 +107,450 @@ scene.add(mainLight);
         const woodTex = textureLoader.load('dark_wood.jpg');
         const floorTex = textureLoader.load('light_wood.jpg');
         // 텍스처 로더 부분 수정
+        const platterTex = textureLoader.load('platter.png');
+
+// 이미지 크기 조절 (중심점 설정)
+platterTex.center.set(0.5, 0.5); 
+
+// 이미지 확대/축소 (1보다 작으면 확대, 크면 축소)
+// 테두리가 남는다면 0.95 정도로 낮춰서 이미지를 살짝 키워보세요.
+platterTex.repeat.set(0.91, 0.91); 
+
+// 테두리 반복 방지
+platterTex.wrapS = THREE.ClampToEdgeWrapping;
+platterTex.wrapT = THREE.ClampToEdgeWrapping;
+
+        const dustTex = textureLoader.load('dust.png');
+        
+        // ★ 핵심: LP 텍스처 회전 중심을 명확히 설정 (오류 원인 완벽 제거)
+        const lpTex = textureLoader.load('LP.png');
+        lpTex.center.set(0.5, 0.5); 
+
+        const blackchrome = new THREE.MeshStandardMaterial({ color: 0x969696, metalness: 0.9, roughness: 0.1 });
+
+// [소리 준비]
+const listener = new THREE.AudioListener();
+camera.add(listener); // 카메라에 귀를 답니다.
+const sound = new THREE.Audio(listener); // 소리 객체 생성
+const audioLoader = new THREE.AudioLoader(); // 음악 파일을 읽어올 도구
+
+
+        // ==========================================
+        // 4. 본체 및 플래터 베이스
+        // ==========================================
+        // MeshStandardMaterial을 MeshLambertMaterial로 교체 (계산이 훨씬 빠름
+        
+        const bodyBox = new THREE.Mesh(new THREE.BoxGeometry(2.88, baseH, 2.2), new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.7 }));
+        bodyBox.position.y = baseH / 2; bodyBox.castShadow = true; bodyBox.receiveShadow = true;
+        scene.add(bodyBox);
+
+        const platter = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.05, 64), [
+            new THREE.MeshStandardMaterial({color: 0x696969}), 
+            new THREE.MeshStandardMaterial({ 
+    map: platterTex, 
+    color: 0xcccccc,  // 이 색상이 이미지와 곱해져서 톤이 결정됩니다.
+    roughness: 0.3 
+}),
+            new THREE.MeshStandardMaterial({color: 0x696969})
+        ]);
+        platter.position.set(-0.45, baseH + 0.025, 0); 
+        platter.castShadow = true; platter.receiveShadow = true;
+        scene.add(platter);
+
+        // ==========================================
+        // 5. LP 시스템 (비틀림 방지 및 먼지 레이어)
+        // ==========================================
+        const lpGroup = new THREE.Group();
+        const outerRadius = 1.0, innerHole = 0.03;
+        
+        const lpShape = new THREE.Shape();
+        lpShape.absarc(0, 0, outerRadius, 0, Math.PI * 2, false);
+        const holePath = new THREE.Path();
+        holePath.absarc(0, 0, innerHole, 0, Math.PI * 2, true);
+        lpShape.holes.push(holePath);
+
+        // [UV 텍스처 정밀 보정 함수]
+        const fixUV = (geo, size) => {
+            const pos = geo.attributes.position;
+            const uvs = geo.attributes.uv;
+            for (let i = 0; i < pos.count; i++) {
+                uvs.setXY(i, (pos.getX(i) / (size * 2)) + 0.5, (pos.getY(i) / (size * 2)) + 0.5);
+            }
+            uvs.needsUpdate = true;
+        };
+
+        // 1. LP 검은 소리골 판
+        const lpGeo = new THREE.ExtrudeGeometry(lpShape, { depth: 0.015, bevelEnabled: false, curveSegments: 64 });
+        fixUV(lpGeo, outerRadius);
+
+        lpPlateMat = new THREE.MeshStandardMaterial({ map: lpTex, roughness: 0.4, metalness: 0.7 });
+        const lpPlate = new THREE.Mesh(lpGeo, lpPlateMat);
+        lpPlate.rotation.x = -Math.PI / 2;
+        lpPlate.castShadow = true;
+        lpGroup.add(lpPlate);
+
+        // 2. 중앙 라벨 아트 (동일한 구멍 뚫림)
+        const labelRadius = 0.35;
+        const labelShape = new THREE.Shape();
+        labelShape.absarc(0, 0, labelRadius, 0, Math.PI * 2, false);
+        labelShape.holes.push(holePath);
+        
+        const labelGeo = new THREE.ShapeGeometry(labelShape, 64);
+        fixUV(labelGeo, labelRadius);
+
+        labelMat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, transparent: true });
+        const lpLabel = new THREE.Mesh(labelGeo, labelMat);
+        lpLabel.rotation.x = -Math.PI / 2;
+        lpLabel.position.y = 0.016;
+        lpGroup.add(lpLabel);
+
+        // 3. 먼지 레이어 (dust.png)
+        const dustLayer = new THREE.Mesh(new THREE.CircleGeometry(0.98, 64), new THREE.MeshStandardMaterial({ map: dustTex, transparent: true, opacity: 0.35 }));
+        dustLayer.rotation.x = -Math.PI / 2;
+        dustLayer.position.y = 0.017;
+        lpGroup.add(dustLayer);
+
+        lpGroup.position.set(-0.45, baseH - 10, 3.5);
+        lpGroup.visible = false;
+        scene.add(lpGroup);
+
+        // ==========================================
+        // 6. [10일의 역작] 톤암 구조 완벽 복원
+        // ==========================================
+        const tonearmRoot = new THREE.Group();
+        tonearmRoot.position.set(0.8, baseH, -0.6);
+        tonearmRoot.scale.set(0.065, 0.065, 0.065);
+        tonearmRoot.rotation.y = Math.PI;
+        scene.add(tonearmRoot);
+
+        const taBase = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.5, 64), blackchrome);
+        taBase.name = "tonearmPart"; tonearmRoot.add(taBase);
+        
+        const vtaRing = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 1.5, 64), blackchrome);
+        vtaRing.position.y = 0.7; vtaRing.name = "tonearmPart"; tonearmRoot.add(vtaRing);
+
+        const armYawGroup = new THREE.Group();
+        armYawGroup.position.set(0, 2.8, 0);
+        tonearmRoot.add(armYawGroup);
+        
+        const pivotHousing = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 1), blackchrome);
+        pivotHousing.position.set(0, -0.3, 0); pivotHousing.name = "tonearmPart";
+        armYawGroup.add(pivotHousing);
+
+        const armPitchGroup = new THREE.Group();
+        armYawGroup.add(armPitchGroup);
+
+        // 암 튜브
+        const armCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-10), 
+            new THREE.Vector3(0.8,0,-13.5), new THREE.Vector3(1.8,0,-16)
+        ]);
+        const armTube = new THREE.Mesh(new THREE.TubeGeometry(armCurve, 64, 0.38, 16, false), blackchrome);
+        armTube.name = "tonearmPart"; armPitchGroup.add(armTube);
+
+        // 뒤쪽 구조물
+        const rearStub = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 6, 32), blackchrome);
+        rearStub.rotation.x = Math.PI/2; rearStub.position.z = 2.5; rearStub.name = "tonearmPart"; armPitchGroup.add(rearStub);
+
+        const mainWeight = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.5, 64), blackchrome);
+        mainWeight.rotation.x = Math.PI/2; mainWeight.position.z = 3.5; mainWeight.name = "tonearmPart"; armPitchGroup.add(mainWeight);
+
+        const Pipesupportconnectrod = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.3, 64), blackchrome);
+        Pipesupportconnectrod.position.set(-0.05, -0.1, -3.5); Pipesupportconnectrod.name = "tonearmPart";
+        armPitchGroup.add(Pipesupportconnectrod);
+
+        const Supportdecoration = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 64), blackchrome);
+        Supportdecoration.position.set(-0.2, -0.6, -2); Supportdecoration.name = "tonearmPart";
+        armPitchGroup.add(Supportdecoration);
+
+        const supportShape = new THREE.Shape();
+        supportShape.moveTo(-1.75, 0); supportShape.lineTo(1.75, 0); supportShape.lineTo(1, 6); supportShape.lineTo(-1, 6); supportShape.lineTo(-1.75, 0);       
+        const pipesupport = new THREE.Mesh(new THREE.ExtrudeGeometry(supportShape, { depth: 0.2, bevelEnabled: true }), blackchrome);
+        pipesupport.rotation.x = -Math.PI / 2; pipesupport.position.set(0, -1, 1.6); pipesupport.name = "tonearmPart";
+        armPitchGroup.add(pipesupport);
+
+        // 헤드쉘 1, 2
+        const headshellMain = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 2), blackchrome);
+        headshellMain.position.set(2.1, 0.5, -16.6); headshellMain.rotation.y = -Math.PI / 8; headshellMain.name = "tonearmPart";
+        armPitchGroup.add(headshellMain);
+
+        const headshell2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 0.2), blackchrome);
+        headshell2.position.set(1.75, -0.3, -15.8); headshell2.rotation.y = -Math.PI / 8; headshell2.name = "tonearmPart"; 
+        armPitchGroup.add(headshell2);
+
+        // 리드선 4색
+        const wireColors = [0xff4444, 0x4444ff, 0x44ff44, 0xffffff];
+        wireColors.forEach((c, i) => {
+            const xOff = (i - 1.5) * 0.15;
+            const s = new THREE.Vector3(1.8 + xOff, -0.2, -15), e = new THREE.Vector3(2.2 + xOff, -0.8, -16.8);
+            const m = new THREE.Vector3().addVectors(s, e).multiplyScalar(0.5); m.y += 0.3; m.z -= 0.2;
+            armPitchGroup.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([s, m, e]), 20, 0.04, 8), new THREE.MeshStandardMaterial({ color: c, metalness: 0.5, roughness: 0.3 })));
+        });
+
+        // GLTF 바늘
+        new GLTFLoader().load('Atlas_Lambda.glb', (gltf) => {
+            const s = gltf.scene; s.position.set(2.3, -0.4, -17); s.rotation.y = -Math.PI/8; s.scale.set(0.8, 0.8, 0.8);
+            s.traverse(n => { if(n.isMesh) n.name = "tonearmPart"; });
+            armPitchGroup.add(s);
+        });
+
+        // ==========================================
+        // 7. 아크릴 케이스 (5면 완벽 부활 및 경첩 로직)
+        // ==========================================
+        // side: THREE.DoubleSide를 삭제하여 보이지 않는 안쪽 계산을 뺍니다.
+const glassMat = new THREE.MeshPhongMaterial({ 
+    color: 0xffffff, 
+    transparent: true, 
+    opacity: 0.15, 
+    shininess: 80 
+});
+        
+        // 뒷면 경첩 2개
+        const hingeGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 32);
+        const hingeL = new THREE.Mesh(hingeGeo, glassMat); hingeL.rotation.z = Math.PI/2; hingeL.position.set(-0.8, baseH + 0.02, -1.1); scene.add(hingeL);
+        const hingeR = hingeL.clone(); hingeR.position.x = 0.8; scene.add(hingeR);
+
+        // 케이스 전체 묶음 (피벗 위치를 -1.1 경첩 축으로 설정)
+        const caseGroup = new THREE.Group();
+        caseGroup.position.set(0, baseH + 0.02, -1.1); 
+        scene.add(caseGroup);
+
+        const cW = 2.88, cD = 2.2, cH = 0.32, tk = 0.04;
+        
+        // 상, 전, 후, 좌, 우 5면 패널 결합 (회전축 z=0을 기준으로 상대적 배치)
+        const topP = new THREE.Mesh(new THREE.BoxGeometry(cW, tk, cD), glassMat); topP.position.set(0, cH, cD/2); caseGroup.add(topP);
+        const frontP = new THREE.Mesh(new THREE.BoxGeometry(cW, cH, tk), glassMat); frontP.position.set(0, cH/2, cD); caseGroup.add(frontP);
+        const backP = new THREE.Mesh(new THREE.BoxGeometry(cW, cH, tk), glassMat); backP.position.set(0, cH/2, 0); caseGroup.add(backP);
+        const rightP = new THREE.Mesh(new THREE.BoxGeometry(tk, cH, cD), glassMat); rightP.position.set(cW/2, cH/2, cD/2); caseGroup.add(rightP);
+        const leftP = new THREE.Mesh(new THREE.BoxGeometry(tk, cH, cD), glassMat); leftP.position.set(-cW/2, cH/2, cD/2); caseGroup.add(leftP);
+        
+        caseGroup.traverse(c => { if(c.isMesh) c.name = "glass"; });
+
+        // ==========================================
+        // 8. 전원 다이얼
+        // ==========================================
+        const dialGrp = new THREE.Group(); dialGrp.position.set(1.1, baseH + 0.02, 0.8); scene.add(dialGrp);
+        const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 32), blackchrome); dial.name = "dial";
+        const led = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 16), new THREE.MeshBasicMaterial({ color: 0x330000 })); led.position.set(0, 0.05, -0.1); led.name = "dial";
+        dialGrp.add(dial, led);
+
+        // ==========================================
+        // 9. 통통 튀는 애니메이션 로직
+        // ==========================================
+        const bounce = (obj) => {
+            gsap.timeline()
+                .to(obj, { x: 0.05, duration: 0.12, ease: "power1.out" })
+                .to(obj, { x: 0, duration: 0.1, ease: "power1.in" })
+                .to(obj, { x: 0.02, duration: 0.08, ease: "power1.out" })
+                .to(obj, { x: 0, duration: 0.08, ease: "power1.in" });
+        };
+
+        function playTonearm() {
+            if (animState !== 0) return; animState = 1;
+            const tl = gsap.timeline({ onComplete: () => { animState = 4; } });
+            tl.to(armPitchGroup.rotation, { x: LIFT_ANGLE, duration: 0.5, ease: "power2.out" })
+              .to(armYawGroup.rotation, { y: PLAY_ANGLE, duration: 0.7, ease: "power2.inOut" }, "+=0.1");
+
+            if (isLPOn) {
+                tl.to(armPitchGroup.rotation, { x: 0, duration: 1.6, ease: "sine.inOut" }); 
+            } else {
+                tl.to(armPitchGroup.rotation, { x: 0, duration: 0.4, ease: "power2.in", onComplete: () => bounce(armPitchGroup.rotation) });
+            }
+        }
+
+        // 콜백을 받아 LP 교체 시 시퀀스를 돕는 구조
+        window.returnTonearm = function(callback) {
+            if (animState !== 4) return; animState = 1;
+            const tl = gsap.timeline({ onComplete: () => { animState = 0; if (callback) callback(); } });
+            tl.to(armPitchGroup.rotation, { x: LIFT_ANGLE, duration: 0.5, ease: "power2.out" })
+              .to(armYawGroup.rotation, { y: 0, duration: 0.7, ease: "power2.inOut" }, "+=0.1")
+              .to(armPitchGroup.rotation, { x: 0, duration: 0.4, ease: "power2.in", onComplete: () => bounce(armPitchGroup.rotation) });
+        }
+
+        // ==========================================
+        // 10. 갤러리 로직 (클릭 UI 픽스 및 재생 중 교체 픽스)
+        // ==========================================
+        window.changeLP = function(url, element) {
+            // UI 클릭 버그 해결 (JS로 클래스 토글)
+            if (element) {
+                element.classList.add('clicked');
+                setTimeout(() => element.classList.remove('clicked'), 150);
+            }
+
+            // 재생 시작/복귀 중에는 조작 방지
+            if (animState !== 0 && animState !== 4) return;
+
+            const executeSwap = () => {
+                textureLoader.load(url, (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    labelMat.map = tex; labelMat.needsUpdate = true;
+                    isLPOn = true; lpGroup.visible = true;
+                    gsap.timeline()
+                        .fromTo(lpGroup.position, {x: -0.45, y: baseH + 1.2, z: 1.5}, {x: -0.45, y: baseH + 0.05, z: 0, duration: 0.8, ease: "power2.inOut"});
+
+// 기존 이미지 로드 코드 바로 아래에 추가하세요
+const audioPath = url.replace('.jpg', '.mp3'); // 1.jpg -> 1.mp3로 이름 변경
+audioLoader.load(audioPath, (buffer) => {
+    sound.setBuffer(buffer);
+    sound.setLoop(true); // 반복 재생
+    sound.setVolume(0.5); // 볼륨 50%
+});
+
+                });
+            };
+
+            const unloadAndSwap = () => {
+                if (isLPOn) {
+                    isLPOn = false;
+                    gsap.to(lpGroup.position, { z: 3.5, duration: 0.6, onComplete: executeSwap });
+                } else {
+                    executeSwap();
+                }
+            };
+
+            // ★ 재생 중(animState=4)일 때는 톤암 복귀 후 LP 교체
+            if (animState === 4) {
+                returnTonearm(unloadAndSwap);
+            } else {
+                unloadAndSwap();
+            }
+        };
+
+        // ==========================================
+        // 11. 클릭 이벤트 통합
+        // ==========================================
+        window.addEventListener('mousedown', (e) => {
+            const mouse = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+            const ray = new THREE.Raycaster(); ray.setFromCamera(mouse, camera);
+            const hits = ray.intersectObjects(scene.children, true);
+            for (let h of hits) {
+                const o = h.object;
+                if (o.name === "tonearmPart" || o.parent?.name === "tonearmPart") { if(animState===0) playTonearm(); else if(animState===4) returnTonearm(); break; }
+                if (o.name === "dial") { isPowerOn = !isPowerOn; led.material.color.set(isPowerOn ? 0xff0000 : 0x330000); break; }
+                if (o.name === "glass") { isCaseOpen = !isCaseOpen; break; }
+            }
+        });
+
+// ==========================================
+// 13. 더블 클릭 전체화면 및 카메라 잠금 기능
+// ==========================================
+let lastClickTime = 0;
+
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        // 전체화면 진입
+        document.documentElement.requestFullscreen().then(() => {
+            // 1. 카메라 이동 잠금 (OrbitControls 비활성화)
+            controls.enabled = false; 
+
+            // 2. 화면 방향 잠금 (모바일 대응)
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(err => {
+                    console.log("방향 잠금 미지원");
+                });
+            }
+            console.log("전체화면: 카메라가 잠겼습니다.");
+        }).catch(err => {
+            console.error(`전체화면 오류: ${err.message}`);
+        });
+    } else {
+        // 전체화면 해제
+        if (document.exitFullscreen) {
+            document.exitFullscreen().then(() => {
+                // 3. 카메라 이동 다시 허용
+                controls.enabled = true;
+                console.log("창 모드: 카메라 잠금이 해제되었습니다.");
+            });
+        }
+        
+        if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+        }
+    }
+}
+
+// 더블 클릭/탭 이벤트 리스너
+window.addEventListener('mousedown', (e) => {
+    const currentTime = new Date().getTime();
+    const clickDelay = currentTime - lastClickTime;
+
+    if (clickDelay < 300 && clickDelay > 0) {
+        toggleFullScreen();
+        e.preventDefault();
+    }
+    lastClickTime = currentTime;
+});
+
+
+        // ==========================================
+        // 12. 메인 렌더 루프
+        // ==========================================
+        // [애니메이션 루프: 모든 물리 연산 및 렌더링 통합]
+function animate() {
+    requestAnimationFrame(animate);
+
+    // 1. LP 회전 속도 제어 (가속 및 감속)
+    // 재생 상태(4)이고 전원이 켜져 있으며 LP가 있을 때만 가속
+    if (animState === 4 && isPowerOn && isLPOn) {
+        lpSpeed = Math.min(lpSpeed + acceleration, maxLpSpeed);
+    } else {
+        lpSpeed = Math.max(lpSpeed - friction, 0);
+    }
+// animate 함수 안의 if (animState === 4 ...) 근처에 추가
+if (animState === 4 && isPowerOn && isLPOn) {
+    if (sound.buffer && !sound.isPlaying) sound.play(); // 톤암이 내려가 있고 전원 켜지면 재생
+} else {
+    if (sound.isPlaying) sound.pause(); // 그 외엔 일시정지
+}
+
+
+    // 2. 실제 회전 및 빛 반사 울렁임(Wobble) 적용
+    if (lpSpeed > 0) {
+        // [A] LP 그룹(판+라벨+먼지)을 실제 속도로 회전시킵니다.
+        lpGroup.rotation.y += lpSpeed;
+
+        // [B] LP.png 텍스처(빛 반사) 처리
+        if (lpPlateMat && lpPlateMat.map) {
+            // 판이 회전하는 만큼 반대 방향으로 돌려 빛 위치를 고정하되,
+            // Math.sin을 이용해 앞뒤로 아주 미세하게(0.01) 흔들어줍니다.
+            // 0.002는 흔들림 속도, 0.01은 흔들림 폭입니다.
+            const wobble = Math.sin(Date.now() * 0.06) * 0.004;
+            lpPlateMat.map.rotation = (-lpGroup.rotation.y) + wobble;
+        }
+        
+        // [C] 플래터(받침대)도 함께 회전시킵니다.
+        if (platter) platter.rotation.y += lpSpeed;
+    }
+
+    // 3. 아크릴 케이스(유리 덮개) 애니메이션
+    // lerp를 이용해 부드럽게 열리고 닫히게 합니다.
+    if (caseGroup) {
+        const targetCaseRotation = isCaseOpen ? -Math.PI * 0.8 : 0;
+        caseGroup.rotation.x = THREE.MathUtils.lerp(caseGroup.rotation.x, targetCaseRotation, 0.1);
+    }
+
+    // 4. 컨트롤 업데이트 및 렌더링
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// 잊지 말고 함수를 실행시켜 줍니다.
+animate();
+
+        // 갤러리 슬라이드 컨트롤
+        let touchStartY = 0;
+        const gallery = document.getElementById('music-gallery');
+        window.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; });
+        window.addEventListener('touchend', (e) => {
+            const dY = touchStartY - e.changedTouches[0].clientY;
+            if (dY > 50 && touchStartY > window.innerHeight * 0.7) gallery.style.bottom = '15px';
+            else if (dY < -50) gallery.style.bottom = '-110px';
+        });
+
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+    </script>
+</body>
+</html>
         const platterTex = textureLoader.load('platter.png');
 
 // 이미지 크기 조절 (중심점 설정)
